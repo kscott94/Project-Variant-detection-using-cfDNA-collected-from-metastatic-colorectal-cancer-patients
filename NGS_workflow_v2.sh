@@ -247,14 +247,16 @@ mv *vcf ../../../vcf
 
 ### Annotate Variants ##########################################################
 
-#annotate variants using
+#annotate variants using GATK Funcotator
+#not enough ram for parallelization on my machine
+
 
 #move vcf files to new directory
 proj_dir="/compute_space/GT_project/submission"
 REF=${proj_dir}/references/Homo_sapiens_assembly38.fasta
 mkdir ${proj_dir}/vcf
 mkdir ${proj_dir}/vcf/annot
-cd ${vcf_dir}/annot
+cd ${vcf_dir}/vcf
 
 
 #get functional annotation resource
@@ -263,19 +265,32 @@ gatk FuncotatorDataSourceDownloader \
   --validate-integrity \
   --extract-after-download \
   --hg38
-  -O ${REF}
-
-funcotator_data_sources=${proj_dir}/references/
+  -O ./
 
 
-#annotate VCFs
-for vcf in ../*.vcf.gz
+cd ${proj_dir}/references/funcotator_dataSources.v1.8.hg38.20230908s
+mkdir hg38
+mv * ./hg38
+cd ${vcf_dir}/vcf
+
+funcotator_data_sources=${proj_dir}/references/funcotator_dataSources.v1.8.hg38.20230908s/hg38
+
+#annotate mutec2 VCFs
+for vcf in *.vcf.gz
 do  
     SAMPLE=$(basename ${vcf} .vcf.gz)
     REF=${proj_dir}/references/Homo_sapiens_assembly38.fasta
-    OUT=${SAMPLE}.annot
+    OUT=${proj_dir}/vcf/annot/${SAMPLE}.annot.vcf.gz
     
-    gatk IndexFeatureFile -I ${vcf}
+    # Check if index exists, if not generate index
+    if [[ ! -f "${vcf}.tbi" ]]
+    then
+        echo "Indexing ${vcf}"
+        gatk IndexFeatureFile -I ${vcf}
+        #tabix -p vcf ${vcf}
+    else
+        echo "${vcf} already indexed."
+    fi
     
     echo "Annotating ${SAMPLE}"
     
@@ -284,12 +299,33 @@ do
         -R ${REF} \
         --ref-version hg38 \
         --data-sources-path ${funcotator_data_sources}/ \
-        -O ${OUT}.vcf.gz \
+        -O ${OUT} \
         --output-file-format VCF
 done   
 
 
+#index varscan2 VCFs
+for vcf in *.vcf.gz
+do  
+    SAMPLE=$(basename ${vcf} .vcf.gz)
+    REF=${proj_dir}/references/Homo_sapiens_assembly38.fasta
+    OUT=${proj_dir}/vcf/annot/${SAMPLE}.annot.vcf.gz
+    
+    # Check if index exists, if not generate index
+    if [[ ! -f "${vcf}.tbi" ]]
+    then
+        echo "Recompressing $vcf with bgzip..."
+        mv $vcf ${SAMPLE}.tmp.vcf.gz         # rename original
+        bgzip -c ${SAMPLE}.tmp.vcf.gz > ${SAMPLE}.vcf.bgz
+        vcf=${SAMPLE}.vcf.bgz
+        echo "Index for ${vcf} not found. Creating..."
+        gatk IndexFeatureFile -I ${vcf}
+        
+    else
+        echo "Index for ${vcf} already exists."
+    fi
+    
+done 
  
     
     
-
